@@ -1,0 +1,29 @@
+# Базовый набор первого семестра. Версии подобраны так, чтобы все пакеты
+# стояли в одном окружении. Пакеты для нейросетей добавятся к занятию 7.
+numpy>=1.26
+# fg-data-profiling пока не поддерживает pandas 3
+pandas>=2.1,<3.0
+scipy>=1.11
+scikit-learn>=1.9
+matplotlib>=3.10
+seaborn>=0.13
+jupyterlab>=4.0
+ipywidgets>=8.1
+jinja2>=3.1
+tqdm>=4.66
+joblib>=1.3
+pyarrow>=14
+
+# автоматический отчет по таблице, занятие 4; преемник ydata-profiling
+fg-data-profiling>=4.20
+
+# тексты: с занятия 4 и в первой домашней работе
+nltk>=3.8
+pymorphy3>=1.2
+datasketch>=1.6
+
+# нужны с занятия 6 (бустинг и подбор гиперпараметров);
+# lightgbm на macOS требует OpenMP: brew install libomp
+catboost>=1.2
+lightgbm>=4.1
+optuna>=3.5
