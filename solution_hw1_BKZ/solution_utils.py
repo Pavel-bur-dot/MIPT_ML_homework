@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import csv
 import json
 import re
 
-import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
-from sklearn.dummy import DummyClassifier
-from sklearn.metrics import accuracy_score, adjusted_rand_score
 
 try:
     stopwords.words("english")
@@ -24,6 +21,9 @@ LANGUAGES = ("english", "russian")
 STOPWORDS = {language: set(stopwords.words(language)) for language in LANGUAGES}
 STEMMERS = {language: SnowballStemmer(language) for language in LANGUAGES}
 
+# ---------------------------------------------------------------------------
+#  Блок 1. Чтение данных и сохранение основных данных
+# ---------------------------------------------------------------------------
 
 def read_raw(path: str) -> list[dict]:
     """Читает jsonl со всеми метками
@@ -91,151 +91,133 @@ def to_turns_frame(records: list[dict]) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-#  Блок A. Базовые распределения
+#  Блок 2. Базовые исследования на длины, доли и вывод распределений
 # ---------------------------------------------------------------------------
-
-def describe_lengths(dialogs_df: pd.DataFrame) -> pd.DataFrame:
-    """Квартили и выбросы по n_turns, user_chars, asst_chars, total_chars."""
-    cols = ["n_turns", "n_user_turns", "user_chars", "asst_chars", "total_chars"]
-    return dialogs_df[cols].describe(percentiles=[.5, .9, .99]).T
-
 
 def language_counts(dialogs_df: pd.DataFrame) -> pd.Series:
     return dialogs_df["language"].value_counts(dropna=False)
 
-
-def reaction_distribution(dialogs_df: pd.DataFrame) -> pd.Series:
-    return dialogs_df["reaction"].value_counts(dropna=False)
-
-
-def task_type_distribution(dialogs_df: pd.DataFrame) -> pd.Series:
-    return dialogs_df["task_type"].value_counts(dropna=False)
-
-
-# ---------------------------------------------------------------------------
-#  Блок B. Метки и их согласованность
-# ---------------------------------------------------------------------------
-
-def turn_label_distributions(turns_df: pd.DataFrame) -> dict[str, pd.Series]:
-    return {
-        "task_type": turns_df["task_type"].value_counts(dropna=False),
-        "state": turns_df["state"].value_counts(dropna=False),
-        "reaction": turns_df["reaction"].value_counts(dropna=False),
-        "reaction_reason": turns_df["reaction_reason"].value_counts(dropna=False),
+def analyze_dialog_lengths_by_turns(dialogs_df: pd.DataFrame) -> dict:
+    """
+    Анализ длины диалогов по количеству реплик.
+    Использует колонки: n_user_replies, n_asst_replies, n_turns.
+    """
+    stats = {}
+    
+    # --- Пользователь ---
+    user = dialogs_df["n_user_replies"]
+    stats["user"] = {
+        "min": user.min(),
+        "max": user.max(),
+        "mean": user.mean(),
+        "median": user.median(),
+        "std": user.std(),
     }
+    
+    # --- Ассистент ---
+    asst = dialogs_df["n_asst_replies"]
+    stats["assistant"] = {
+        "min": asst.min(),
+        "max": asst.max(),
+        "mean": asst.mean(),
+        "median": asst.median(),
+        "std": asst.std(),
+    }
+    
+    # --- Общее ---
+    total = dialogs_df["n_turns"]
+    stats["total"] = {
+        "min": total.min(),
+        "max": total.max(),
+        "mean": total.mean(),
+        "median": total.median(),
+        "std": total.std(),
+    }
+    
+    return stats
 
 
-def dialog_vs_turn_reaction(records: list[dict]) -> pd.DataFrame:
-    """Для каждого диалога — реакция верхнего уровня и набор реакций в user_turns.
-    Показывает, есть ли расхождения neutral<->negative/positive."""
-    rows = []
-    for r in records:
-        top = (r.get("labels") or {}).get("reaction")
-        inner = [(t.get("reaction")) for t in ((r.get("labels") or {}).get("user_turns") or [])]
-        rows.append({
-            "dialog_id": r["dialog_id"],
-            "top_reaction": top,
-            "n_negative": inner.count("negative"),
-            "n_positive": inner.count("positive"),
-            "n_neutral": inner.count("neutral"),
-            "n_null": sum(1 for x in inner if x is None),
-        })
-    return pd.DataFrame(rows)
+def plot_dialog_lengths_by_turns(dialogs_df: pd.DataFrame):
+    """
+    Три гистограммы: распределение количества реплик
+    пользователя, ассистента и общего.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # Пользователь
+    axes[0].hist(dialogs_df["n_user_replies"], bins=30,
+                 color="steelblue", edgecolor="black")
+    axes[0].set_title("Реплики пользователя")
+    axes[0].set_xlabel("Количество реплик")
+    axes[0].set_ylabel("Число диалогов")
+    
+    # Ассистент
+    axes[1].hist(dialogs_df["n_asst_replies"], bins=30,
+                 color="coral", edgecolor="black")
+    axes[1].set_title("Реплики ассистента")
+    axes[1].set_xlabel("Количество реплик")
+    axes[1].set_ylabel("Число диалогов")
+    
+    # Общее
+    axes[2].hist(dialogs_df["n_turns"], bins=30,
+                 color="seagreen", edgecolor="black")
+    axes[2].set_title("Общее число реплик")
+    axes[2].set_xlabel("Количество реплик")
+    axes[2].set_ylabel("Число диалогов")
+    
+    plt.tight_layout()
+    plt.show()
+
+def analyze_dialog_lengths_by_chars(dialogs_df: pd.DataFrame) -> dict:
+    """
+    Анализ длины диалогов по количеству символов.
+    Использует колонки: user_chars, asst_chars, total_chars.
+    """
+    stats = {}
+    
+    for name, col in [("user", "user_chars"),
+                      ("assistant", "asst_chars"),
+                      ("total", "total_chars")]:
+        s = dialogs_df[col]
+        stats[name] = {
+            "min": s.min(),
+            "max": s.max(),
+            "mean": s.mean(),
+            "median": s.median(),
+            "std": s.std(),
+            "q25": s.quantile(0.25),
+            "q50": s.quantile(0.50),
+            "q75": s.quantile(0.75),
+            "q90": s.quantile(0.90),
+        }
+    return stats
 
 
-def dialog_vs_turn_task_type(records: list[dict]) -> pd.DataFrame:
-    """Совпадает ли task_type диалога с task_type хотя бы одной user-реплики."""
-    rows = []
-    for r in records:
-        top = (r.get("labels") or {}).get("task_type")
-        inner = [(t.get("task_type")) for t in ((r.get("labels") or {}).get("user_turns") or [])]
-        rows.append({
-            "dialog_id": r["dialog_id"],
-            "top_task_type": top,
-            "n_matching_turns": sum(1 for x in inner if x == top),
-            "n_user_turns": len(inner),
-        })
-    return pd.DataFrame(rows)
-
-
-# ---------------------------------------------------------------------------
-#  Блок C. Мусор, шаблоны, дубликаты
-# ---------------------------------------------------------------------------
-
-TEMPLATE_PATTERNS = {
-    "ai_language_model": re.compile(r"as an ai language model", re.I),
-    "apologize": re.compile(r"\bi apologi[sz]e\b", re.I),
-    "sorry": re.compile(r"\bi'?m sorry\b", re.I),
-    "as_of_my_last": re.compile(r"as of my last knowledge", re.I),
-    "cannot_browse": re.compile(r"i (do not|don't) have real-?time access", re.I),
-}
-
-
-def template_phrase_counts(records: list[dict]) -> pd.DataFrame:
-    """Сколько реплик ассистента содержат шаблонные фразы, и в скольких диалогах."""
-    rows = []
-    for name, pattern in TEMPLATE_PATTERNS.items():
-        turn_hits, dialog_hits = 0, set()
-        for r in records:
-            hit_here = False
-            for t in r["turns"]:
-                if t["role"] == "assistant" and pattern.search(t["text"]):
-                    turn_hits += 1
-                    hit_here = True
-            if hit_here:
-                dialog_hits.add(r["dialog_id"])
-        rows.append({"pattern": name, "n_turns": turn_hits, "n_dialogs": len(dialog_hits)})
-    return pd.DataFrame(rows).set_index("pattern")
-
-
-def empty_or_short_turns(records: list[dict], min_len: int = 3) -> pd.DataFrame:
-    """Реплики короче min_len символов (потенциальный мусор)."""
-    rows = []
-    for r in records:
-        for i, t in enumerate(r["turns"]):
-            text = t["text"]
-            if len(text.strip()) < min_len:
-                rows.append({"dialog_id": r["dialog_id"], "turn_idx": i,
-                             "role": t["role"], "text": text})
-    return pd.DataFrame(rows)
-
-
-def duplicate_first_user_messages(records: list[dict]) -> pd.DataFrame:
-    """Частота нормализованных первых реплик пользователя.
-    Нужна, чтобы понять риск утечки между train и test."""
-    counter = Counter()
-    for r in records:
-        first = next((t["text"] for t in r["turns"] if t["role"] == "user"), None)
-        if first:
-            counter[first.strip().lower()] += 1
-    dupes = [(text, n) for text, n in counter.most_common() if n > 1]
-    return pd.DataFrame(dupes, columns=["first_user_message", "count"])
-
-
-# ---------------------------------------------------------------------------
-#  Блок D. Связь с reaction
-# ---------------------------------------------------------------------------
-
-def reaction_by_length(dialogs_df: pd.DataFrame) -> pd.DataFrame:
-    """Медиана/среднее длины диалога по классам реакции."""
-    return dialogs_df.groupby("reaction")[["n_turns", "user_chars", "asst_chars", "total_chars"]].agg(["mean", "median", "count"])
-
-
-def reaction_by_template(records: list[dict]) -> pd.DataFrame:
-    """Доля диалогов с шаблонными фразами ассистента по классам реакции."""
-    rows = []
-    for r in records:
-        top = (r.get("labels") or {}).get("reaction")
-        if top is None:
-            continue
-        for name, pattern in TEMPLATE_PATTERNS.items():
-            hit = any(t["role"] == "assistant" and pattern.search(t["text"]) for t in r["turns"])
-            rows.append({"dialog_id": r["dialog_id"], "reaction": top, "pattern": name, "hit": hit})
-    df = pd.DataFrame(rows)
-    return df.groupby(["reaction", "pattern"])["hit"].mean().unstack()
-
-
-def reaction_reason_by_position(turns_df: pd.DataFrame) -> pd.DataFrame:
-    """Как причины недовольства распределены по позиции реплики."""
-    sub = turns_df[turns_df["reaction_reason"].notna()]
-    return sub.groupby(["position", "reaction_reason"]).size().unstack(fill_value=0)
+def plot_dialog_lengths_by_chars(dialogs_df: pd.DataFrame):
+    """
+    Гистограммы и boxplot'ы для распределения количества символов.
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    
+    cols = [
+        ("user_chars", "Символы пользователя", "steelblue"),
+        ("asst_chars", "Символы ассистента", "coral"),
+        ("total_chars", "Общее число символов", "seagreen"),
+    ]
+    
+    # Верхний ряд: гистограммы
+    for i, (col, title, color) in enumerate(cols):
+        axes[0, i].hist(dialogs_df[col], bins=50,
+                        color=color, edgecolor="black")
+        axes[0, i].set_title(title)
+        axes[0, i].set_xlabel("Количество символов")
+        axes[0, i].set_ylabel("Число диалогов")
+    
+    # Нижний ряд: boxplot'ы
+    for i, (col, title, color) in enumerate(cols):
+        axes[1, i].boxplot(dialogs_df[col].dropna(), vert=True)
+        axes[1, i].set_title(f"Boxplot: {title.lower()}")
+        axes[1, i].set_ylabel("Количество символов")
+    
+    plt.tight_layout()
+    plt.show()
