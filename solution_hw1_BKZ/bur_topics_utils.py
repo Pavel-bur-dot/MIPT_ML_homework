@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from nltk.corpus import stopwords
-import solution_utils as su   # <-- ДО создания стеммера
+import solution_utils as su
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ _STEMMERS = {
     "english": su.STEMMERS["english"],
     "russian": su.STEMMERS["russian"],
 }
-_CYRILLIC_RE = re.compile(r"[а-яА-ЯёЁ]")
+_CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
 
 # ---------------------------------------------------------------------------
 # Чтение данных
@@ -217,7 +217,7 @@ def extract_first_user_text(
     return first.str.slice(0, max_chars)
 
 def detect_language(text: str) -> str:
-    return "russian" if _CYRILLIC_RE.search(text) else "english"
+    return "russian" if _CYRILLIC.search(text) else "english"
 
 def preprocess_for_topics(text: str) -> str:
     """Автоопределение языка + стоп-слова + стемминг."""
