@@ -1,3 +1,9 @@
-solution_hw1_BKZ/dataset/hw1_train.jsonl
+# Python
 __pycache__/
 *.py[cod]
+*.so
+.ipynb_checkpoints/
+
+# Данные и артефакты EDA
+hw1_train.jsonl
+artifacts/
