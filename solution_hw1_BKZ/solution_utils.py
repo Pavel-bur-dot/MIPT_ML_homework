@@ -13,19 +13,17 @@ import joblib
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from nltk.stem import SnowballStemmer
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.dummy import DummyClassifier
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics import (accuracy_score, adjusted_rand_score, f1_score, homogeneity_completeness_v_measure,
                              normalized_mutual_info_score, precision_recall_fscore_support)
-from sklearn.feature_selection import SelectPercentile, chi2
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics.cluster import contingency_matrix
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import NearestCentroid
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import Normalizer, normalize
 
 try:
     stopwords.words("english")
@@ -362,25 +360,44 @@ def per_topic_report(y_true, y_pred, labels) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 def make_topic_models(seed: int = SEED, own_percentile: int = 50) -> dict:
     """
-    dummy_most_frequent    — нижняя планка: всегда самая частая тема.
-    tfidf_nearest_centroid — базовая 1: ближайший центр темы (евклидово расстояние).
-    tfidf_naive_bayes      — базовая 2: наивный Байес (какие слова чаще встречаются в какой теме).
-    tfidf_logreg           — базовая 3: логистическая регрессия (вес каждого слова «за» и «против» каждой темы).
-    own_cosine_centroid    — СВОЯ: базовая 1, улучшенная: косинус вместо евклидова расстояния.
+    Набор моделей для предсказания темы диалога.
+
+    dummy_most_frequent    — нижняя планка: всегда предсказывает самую частую тему.
+                             Ничего не учится, нужен только для сравнения: если модель
+                             не лучше него, она бесполезна.
+    tfidf_nearest_centroid — базовая 1: у каждой темы считается «центр»
+                             (средний TF-IDF-вектор), диалог относится к ближайшему
+                             центру по евклидову расстоянию. Простая и быстрая.
+    tfidf_naive_bayes      — базовая 2: наивный Байес. Смотрит, какие слова чаще
+                             встречаются в какой теме, и перемножает вероятности
+                             (считая слова независимыми). Хорош на разреженных TF-IDF.
+    tfidf_logreg           — базовая 3: логистическая регрессия. Для каждой темы
+                             учит вес каждого слова «за» и «против» неё. Обычно
+                             самая сильная из базовых на текстовых задачах.
+
+    own_weighted_knn       — СВОЯ: улучшенный kNN. Обычный KNeighborsClassifier
+                             голосует за всех соседей одинаково (weights="uniform")
+                             и меряет расстояние по евклиду. Здесь:
+                               • weights="distance" — голос соседа взвешен обратно
+                                 пропорционально расстоянию: близкий сосед весит
+                                 больше, далёкий — меньше;
+                               • metric="cosine" — косинусная близость вместо
+                                 евклидовой, что стандартно лучше для TF-IDF
+                                 (сравниваются направления векторов, а не длины).
+                             Идея: «мягкое голосование вместо жёсткого». Оба
+                             изменения — это просто параметры встроенного класса,
+                             никакого своего кода не нужно.
     """
     return {
         "dummy_most_frequent": DummyClassifier(strategy="most_frequent"),
         "tfidf_nearest_centroid": make_pipeline(make_tfidf(), NearestCentroid()),
         "tfidf_naive_bayes": make_pipeline(make_tfidf(), MultinomialNB()),
         "tfidf_logreg": make_pipeline(make_tfidf(), LogisticRegression(max_iter=300, random_state=seed)),
-        "own_cosine_centroid": make_pipeline(
+        "own_weighted_knn": make_pipeline(
             make_tfidf(),
-            SelectPercentile(chi2, percentile=own_percentile),
-            Normalizer(),
-            NearestCentroid(metric="cosine"),
+            KNeighborsClassifier(n_neighbors=15, weights="distance", metric="cosine"),
         ),
     }
-
 
 # ---------------------------------------------------------------------------
 # Сохранение и инференс
