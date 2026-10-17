@@ -389,11 +389,11 @@ def make_topic_models(seed: int = SEED, own_percentile: int = 50) -> dict:
                              никакого своего кода не нужно.
     """
     return {
-        "dummy_most_frequent": DummyClassifier(strategy="most_frequent"),
-        "tfidf_nearest_centroid": make_pipeline(make_tfidf(), NearestCentroid()),
-        "tfidf_naive_bayes": make_pipeline(make_tfidf(), MultinomialNB()),
-        "tfidf_logreg": make_pipeline(make_tfidf(), LogisticRegression(max_iter=300, random_state=seed)),
-        "own_weighted_knn": make_pipeline(
+        "dummy_most_frequent_2": DummyClassifier(strategy="most_frequent"),
+        "tfidf_nearest_centroid_2": make_pipeline(make_tfidf(), NearestCentroid()),
+        "tfidf_naive_bayes_2": make_pipeline(make_tfidf(), MultinomialNB()),
+        "tfidf_logreg_2": make_pipeline(make_tfidf(), LogisticRegression(max_iter=300, random_state=seed)),
+        "own_weighted_knn_2": make_pipeline(
             make_tfidf(),
             KNeighborsClassifier(n_neighbors=15, weights="distance", metric="cosine"),
         ),
@@ -402,12 +402,12 @@ def make_topic_models(seed: int = SEED, own_percentile: int = 50) -> dict:
 # ---------------------------------------------------------------------------
 # Сохранение и инференс
 # ---------------------------------------------------------------------------
-def save_topic_models(models: dict, topic_table: pd.DataFrame, directory=ARTIFACTS_DIR / "topics") -> None:
+def save_topic_models(models: dict, topic_table: pd.DataFrame, directory=ARTIFACTS_DIR) -> None:
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for name, model in models.items():
         joblib.dump(model, directory / f"{name}.joblib", compress=3)
-    topic_table.to_csv(directory / "topics.csv", index=False)
+    topic_table.to_csv(directory / "topics_table.csv", index=False)   # ← добавили имя файла
 
 
 def init_topic_models(directory=ARTIFACTS_DIR / "topics") -> dict:
