@@ -6,4 +6,6 @@ __pycache__/
 
 # Данные и артефакты EDA
 hw1_train.jsonl
+hidden_labels.jsonl
+hidden_test.jsonl
 artifacts/
