@@ -1,5 +1,5 @@
 # HW2 — командная заготовка (деревья и ансамбли)
-
+# Переделаем под отчет
 Всё устроено как в HW1: флаги `dialog_flags.csv`, диалоги с `use_reaction == 1` (2930),
 разбиение `GroupShuffleSplit` по `group_id`, кросс-валидация `StratifiedGroupKFold`, метрики из таблицы HW1.
 

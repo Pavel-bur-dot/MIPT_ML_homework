@@ -1,14 +1,3 @@
-"""Общий код HW2. Его импортируют все ноутбуки и solution.ipynb.
-
-Главное: всё устроено ТАК ЖЕ, как в вашей HW1.
-  * данные: hw1_train.jsonl + artifacts/dialog_flags.csv (флаги, политика чистки);
-  * для задачи реакции берутся диалоги с use_reaction == 1 (2930 штук);
-  * разбиение: GroupShuffleSplit по group_id (почти-копии не разрываются), 80/20, seed 42;
-  * кросс-валидация: StratifiedGroupKFold по тем же группам;
-  * метрики: те же, что в таблице HW1;
-  * старые модели называются hw1_<имя>, новые — hw2_<имя>.
-"""
-
 from __future__ import annotations
 
 import json
@@ -25,6 +14,8 @@ from sklearn.metrics import (accuracy_score, average_precision_score, balanced_a
 from sklearn.base import clone
 from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, cross_val_predict
 from sklearn.preprocessing import label_binarize
+from nltk.stem import SnowballStemmer
+from nltk.corpus import stopwords
 
 HERE = Path(__file__).resolve().parent
 ARTIFACTS = HERE / "artifacts"
@@ -43,7 +34,7 @@ OLD_MODEL_FILES = {
 
 
 # ---------------------------------------------------------------------------
-#  Поиск файлов (как в HW1: перебираем типичные места)
+#  Поиск файлов
 # ---------------------------------------------------------------------------
 
 def find_file(candidates: list[str]) -> Path | None:
@@ -68,7 +59,7 @@ def flags_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-#  Данные и разбиение (повторяет HW1, задача 1)
+#  Данные и разбиение 
 # ---------------------------------------------------------------------------
 
 def read_dialogs(path) -> list[dict]:
@@ -83,9 +74,9 @@ def read_dialogs(path) -> list[dict]:
 
 
 def load_task1(train_file, flags_file) -> pd.DataFrame:
-    """Диалоги задачи 1: только use_reaction == 1 (политика чистки из HW1).
-
-    Столбцы: dialog_id, turns, reaction, group_id. Порядок строк — как в файле,
+    """Диалоги задачи 1: только use_reaction == 1 (согласно EDA).
+    Столбцы: dialog_id, turns, reaction, group_id.
+    Порядок строк — как в файле,
     поэтому разбиение ниже даёт ровно те же train/test, что в HW1.
     """
     texts = pd.DataFrame(read_dialogs(train_file))
@@ -103,74 +94,67 @@ def split_task1(task1: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def get_folds(y, groups) -> list:
-    """Одни и те же 5 блоков для ВСЕХ моделей: группы не разрываются, доли классов сохраняются.
+    """Одни и те же 5 блоков для всех моделей: группы не разрываются, доли классов сохраняются.
     Возвращает список пар (индексы_обучения, индексы_проверки)."""
     cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
     return list(cv.split(np.zeros(len(y)), y, groups))
 
 
 # ---------------------------------------------------------------------------
-#  Вход старых моделей HW1 и их токенизатор
+#  Вход старых моделей HW1 и их токенайзер
 # ---------------------------------------------------------------------------
 
 def old_dialog_text(dialog: dict) -> str:
-    """Как в HW1 (extract_text): тексты ВСЕХ реплик (и пользователя, и модели) через пробел."""
+    """Как в HW1 достаются все реплики (и пользователя, и ассистента) и склеиваются в одну общую строку через пробел"""
     return " ".join(t.get("text", "") for t in dialog["turns"] if isinstance(t, dict))
 
+stemmer_en = SnowballStemmer("english")
+stemmer_ru = SnowballStemmer("russian")
 
-_NLP: dict = {}
-_WORD = re.compile(r"[^\W\d_]+")
-
+stop_words_en = set(stopwords.words("english"))
+stop_words_ru = set(stopwords.words("russian"))
+all_stop_words = stop_words_en.union(stop_words_ru) # объединяем стоп-слова
+WORD_REG = re.compile(r'[^\W\d_]+')
 
 def smart_tokenizer(text: str) -> list[str]:
-    """Токенизатор модели kirp_model (копия из HW1): слова из букв, без стоп-слов, основы слов.
+    """Токенизатор модели kirp_model (копия из HW1)"""
 
-    Важно: в HW1 условие с 'no'/'ok'/'yes'/'not' всегда истинно (непустая строка в `or`),
-    поэтому эти слова на деле НЕ сохранялись, они просто удалялись как стоп-слова.
-    Поведение оставлено прежним, иначе обученная модель получит другие признаки.
-    """
-    if not _NLP:   # тяжёлые объекты создаём один раз и только когда понадобятся
-        from nltk.corpus import stopwords
-        from nltk.stem import SnowballStemmer
-        _NLP["en"], _NLP["ru"] = SnowballStemmer("english"), SnowballStemmer("russian")
-        _NLP["stop"] = set(stopwords.words("english")) | set(stopwords.words("russian"))
+    text_lower = text.lower()
+    raw_words = WORD_REG.findall(text_lower)
+    
     result = []
-    for word in _WORD.findall(text.lower()):
-        if len(word) < 2 or word in _NLP["stop"]:
-            continue
-        is_ru = "а" <= word[0] <= "я" or word[0] == "ё"
-        result.append(_NLP["ru" if is_ru else "en"].stem(word))
+    for word in raw_words:
+        if (
+            (len(word) < 2 or word in all_stop_words) and 
+            (word != 'no' or 'ok' or 'yes' or 'not')
+            ): continue
+            
+        # Проверяем, на каком языке слово (по первой букве)
+        if 'а' <= word[0] <= 'я' or word[0] == 'ё':
+            stemmed = stemmer_ru.stem(word) # пилим русские окончания
+        else:
+            stemmed = stemmer_en.stem(word) # пилим английские окончания
+            
+        result.append(stemmed)
     return result
 
 
-def load_pickle(path):
-    """joblib.load с подстраховкой: в HW1 smart_tokenizer лежал в ноутбуке (модуль __main__),
-    pickle запоминает его по этому адресу. Подкладываем функцию туда, чтобы загрузка сработала."""
-    import __main__
-    if not hasattr(__main__, "smart_tokenizer"):
-        __main__.smart_tokenizer = smart_tokenizer
-    return joblib.load(path)
-
-
 def migrate_old_models(hw1_artifacts: str | Path) -> dict:
-    """Один раз: взять модели из artifacts/ папки HW1 и сложить в hw2/artifacts как hw1_<имя>.joblib.
+    import __main__
+    __main__.smart_tokenizer = smart_tokenizer  # нужно только для загрузки старых pickle
 
-    У kirp_model заменяем ссылку на токенизатор на solution_utils.smart_tokenizer, чтобы модель
-    загружалась без ноутбука. Заодно копируем dialog_flags.csv.
-    """
-    hw1_artifacts, ARTIFACTS_DIR = Path(hw1_artifacts), ARTIFACTS
-    ARTIFACTS_DIR.mkdir(exist_ok=True)
+    hw1_artifacts = Path(hw1_artifacts)
+    ARTIFACTS.mkdir(exist_ok=True)
     done = {}
     for new_name, filename in OLD_MODEL_FILES.items():
-        model = load_pickle(hw1_artifacts / filename)
+        model = joblib.load(hw1_artifacts / filename)
         first_step = model.steps[0][1] if hasattr(model, "steps") else None
         if first_step is not None and getattr(first_step, "tokenizer", None) is not None:
             first_step.tokenizer = smart_tokenizer
-        joblib.dump(model, ARTIFACTS_DIR / f"{new_name}.joblib", compress=3)
-        done[new_name] = ARTIFACTS_DIR / f"{new_name}.joblib"
-    flags_src = hw1_artifacts / "dialog_flags.csv"
-    if flags_src.exists():
-        shutil.copy(flags_src, ARTIFACTS_DIR / "dialog_flags.csv")
+        dst = ARTIFACTS / f"{new_name}.joblib"
+        joblib.dump(model, dst, compress=3)
+        done[new_name] = dst
+    ...
     return done
 
 
@@ -246,7 +230,12 @@ def save_model(name: str, model) -> Path:
 
 
 def load_models(prefix: str = "") -> dict:
-    return {p.stem: load_pickle(p) for p in sorted(ARTIFACTS.glob(f"{prefix}*.joblib"))}
+    import __main__
+    # старые pickle из HW1 ссылаются на __main__.smart_tokenizer
+    if not hasattr(__main__, "smart_tokenizer"):
+        __main__.smart_tokenizer = smart_tokenizer
+
+    return {p.stem: joblib.load(p) for p in sorted(ARTIFACTS.glob(f"{prefix}*.joblib"))}
 
 
 def init_reaction_models(train_path_: str | None = None) -> dict:
@@ -288,12 +277,8 @@ def all_metrics(y_true, proba, classes=CLASSES) -> dict[str, float]:
 
 
 def cv_metrics(model, X, y, folds, n_jobs=-1) -> dict[str, float]:
-    """Метрики модели на кросс-валидации с заданными блоками folds.
+    """Метрики модели на кросс-валидации с заданными блоками folds."""
 
-    cross_val_predict обучает КОПИЮ модели (clone) на 4 блоках и считает вероятности для пятого,
-    так что каждый диалог оценивается моделью, которая его не видела. Модель из artifacts
-    при этом не меняется.
-    """
     proba = cross_val_predict(clone(model), X, y, cv=folds, method="predict_proba", n_jobs=n_jobs)
     return all_metrics(y, proba)
 
