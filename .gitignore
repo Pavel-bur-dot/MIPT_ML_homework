@@ -8,4 +8,16 @@ __pycache__/
 hw1_train.jsonl
 hidden_labels.jsonl
 hidden_test.jsonl
-artifacts/
+
+# --- ИГНОРИРУЕМ АРТЕФАКТЫ ПЕРВОЙ ДОМАШКИ ---
+# Если папки solution_hw1_BKZ и solution_hw2_BKZ лежат в корне репозитория:
+solution_hw1_BKZ/artifacts/
+
+# --- ИГНОРИРУЕМ АРТЕФАКТЫ ВТОРОЙ ДОМАШКИ ---
+solution_hw2_BKZ/results/
+
+# --- ПРИНУДИТЕЛЬНО ВКЛЮЧАЕМ АРТЕФАКТЫ ВТОРОЙ ДОМАШКИ (на всякий случай) ---
+# Git по умолчанию не заходит в игнорируемые папки, 
+# но если правило выше случайно зацепит лишнее, это вернет папку:
+!solution_hw2_BKZ/artifacts/
+!solution_hw2_BKZ/artifacts/**

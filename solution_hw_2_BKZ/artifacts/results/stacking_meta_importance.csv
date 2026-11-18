@@ -1,0 +1,6 @@
+,падение macro-F1 (среднее),std
+hw2_random_forest,0.1582,0.0302
+hw1_kirp_model,0.057,0.0322
+hw1_tfidf_logreg,0.0465,0.0222
+hw2_gb_sklearn,0.0123,0.0081
+hw1_bow_logreg,0.0025,0.0054
