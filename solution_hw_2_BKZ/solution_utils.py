@@ -19,7 +19,7 @@ from nltk.corpus import stopwords
 
 HERE = Path(__file__).resolve().parent
 ARTIFACTS = HERE / "artifacts"
-RESULTS = HERE / "results"
+RESULTS = HERE / "artifacts" / "results"
 CLASSES = ["negative", "neutral", "positive"]
 SEED = 42
 
@@ -46,7 +46,8 @@ def find_file(candidates: list[str]) -> Path | None:
 
 
 def train_path() -> Path:
-    path = find_file([os.environ.get("HW2_TRAIN", ""), "hw1_train.jsonl", "dataset/hw1_train.jsonl",
+    path = find_file([os.environ.get("HW2_TRAIN", ""), "hw1_train.jsonl",
+                      "/home/pavel-ubunt/Рабочий стол/ML_mipt/MIPT_ML_homework/solution_hw1_BKZ/dataset/hw1_train.jsonl",
                       "hw1_data/hw1_train.jsonl", "../solution_hw1_BKZ/dataset/hw1_train.jsonl"])
     assert path is not None, "не нашли hw1_train.jsonl: положите рядом или задайте HW2_TRAIN"
     return path
@@ -163,48 +164,58 @@ def migrate_old_models(hw1_artifacts: str | Path) -> dict:
 # ---------------------------------------------------------------------------
 
 NUMERIC_COLUMNS = [
-    "n_user_turns", "n_turns", "user_chars_total", "last_user_chars", "max_user_chars",
-    "user_chars_mean", "assistant_chars_mean", "n_question_marks", "n_exclamations",
-    "has_user_code", "has_assistant_code", "has_assistant_loop",
+    "n_user_turns_declared",   # заявлено реплик пользователя в задании
+    "n_user_actual",           # сколько реплик пользователя реально
+    "n_messages",              # всего сообщений в диалоге
+    "n_label_turns",           # сколько реплик размечено
+    "n_chars_total",           # суммарная длина всех сообщений
+    "max_msg_chars",           # длина самой длинной реплики
+    "first_turn_freq",         # частота первой реплики в корпусе
+    "nn_sim",                  # похожесть на ближайшего соседа
+    "bad_label_count",         # число плохих меток
+    "bad_roles",               # неправильная последовательность ролей
+    "has_code",                # есть код в диалоге
+    "has_user_code",           # код у пользователя
+    "has_assistant_code",      # код у ассистента
+    "has_assistant_loop",      # ассистент зациклился
+    "user_has_cyrillic",       # кириллица у пользователя
+    "has_empty_message",       # пустое сообщение
+    "has_short_turn",          # короткая реплика
+    "is_template",             # шаблонный диалог
+    "is_exact_dup",            # точный дубликат
+    "in_near_dup_group",       # группа почти-дубликатов
 ]
-_CODE_CHARS = re.compile(r"[{}\[\]()<>;=_#/\\]")
 
 
-def looks_like_code(text: str) -> bool:
-    """Правило «похоже на код» из EDA HW1: ограда ``` либо длина >= 200 и доля символов {}[]()<>;=_#/\\ > 0.08."""
-    if "```" in text:
-        return True
-    return len(text) >= 200 and len(_CODE_CHARS.findall(text)) / len(text) > 0.08
+def load_flags() -> pd.DataFrame:
+    """EDA-разметка, индекс — dialog_id."""
+    return pd.read_csv(flags_path()).set_index("dialog_id")
 
 
-def make_frame(dialogs: list[dict]) -> pd.DataFrame:
-    """Диалог -> строка таблицы: два текста + числа (часть чисел — те же флаги, что в EDA HW1).
+def make_frame(dialogs: list[dict], flags: pd.DataFrame) -> pd.DataFrame:
+    """Диалог -> строка таблицы: два текста + числа из разметки.
 
-    Флаги, которые можно посчитать только по репликам (код, зацикливание модели),
-    переехали сюда как признаки: на скрытом тесте файла флагов нет, а реплики есть.
+    Текст (user_text, last_user) собирается из реплик — он нужен для TF-IDF.
+    Все числовые признаки берутся из dialog_flags.csv по dialog_id;
+    отсутствие dialog_id в разметке — ошибка вызывающего кода.
     """
     rows = []
     for d in dialogs:
         user = [t["text"] or "" for t in d["turns"] if t["role"] == "user"]
-        asst = [t["text"] or "" for t in d["turns"] if t["role"] == "assistant"]
-        user_text = " ".join(user)
-        asst_nonempty = [a for a in asst if a.strip()]
-        rows.append({
-            "user_text": user_text,
+        if d["dialog_id"] not in flags.index:
+            raise KeyError(f"нет в разметке: {d['dialog_id']}")
+
+        row = {
+            "dialog_id": d["dialog_id"],
+            "user_text": " ".join(user),
             "last_user": user[-1] if user else "",
-            "n_user_turns": len(user),
-            "n_turns": len(d["turns"]),
-            "user_chars_total": len(user_text),
-            "last_user_chars": len(user[-1]) if user else 0,
-            "max_user_chars": max((len(u) for u in user), default=0),
-            "user_chars_mean": len(user_text) / max(len(user), 1),
-            "assistant_chars_mean": sum(map(len, asst)) / max(len(asst), 1),
-            "n_question_marks": user_text.count("?"),
-            "n_exclamations": user_text.count("!"),
-            "has_user_code": int(any(looks_like_code(u) for u in user)),
-            "has_assistant_code": int(any(looks_like_code(a) for a in asst)),
-            "has_assistant_loop": int(len(set(asst_nonempty)) < len(asst_nonempty)),
-        })
+            "dialog_text": " ".join(
+                (t.get("text") or "") for t in d["turns"] if isinstance(t, dict)
+            ),
+        }
+        row.update(flags.loc[d["dialog_id"], NUMERIC_COLUMNS].to_dict())
+        rows.append(row)
+
     return pd.DataFrame(rows)
 
 
